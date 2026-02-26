@@ -198,24 +198,25 @@
   </div>
 
   <script>
-    let APP_CONFIG = {};
-    try {
-      APP_CONFIG = <?!= config ?>;
-    } catch(e) {
-      console.error('Config load failed', e);
-      APP_CONFIG = { modes: { default: { label: 'Event' } } };
-    }
-  </script>
-
-  <script>
+    let APP_CONFIG = { modes: { default: { label: 'Event' } } }; // 初期値
     let html5QrcodeScanner = null;
     let currentModeKey = '';
     let isScanning = true;
     let participantList = []; 
     const STORE_KEY = 'scan_app_pass'; 
 
-    window.onload = function() {
+    window.onload = async function() {
+      // 1. GASから設定を引っ張ってくる
+      try {
+        APP_CONFIG = await callGas('getConfig');
+      } catch(e) {
+        console.error('Config load failed', e);
+      }
+
+      // 2. 画面の初期化
       initModeButtons();
+      
+      // 3. ログインチェック
       const savedPass = localStorage.getItem(STORE_KEY);
       if (savedPass) {
         document.getElementById('pass-input').value = savedPass;
@@ -307,27 +308,27 @@
     }
 
     // ----- ログイン・ログアウト -----
-    function doLogin(isAuto) {
+  async function doLogin(isAuto) {
       const pass = document.getElementById('pass-input').value;
       const msg = document.getElementById('login-msg');
       msg.innerText = isAuto ? '自動ログイン中...' : '認証中...';
 
-      google.script.run
-        .withSuccessHandler(function(isValid) {
-          if (isValid) {
-            msg.innerText = '';
-            localStorage.setItem(STORE_KEY, pass);
-            document.getElementById('login-ui').style.display = 'none';
-            document.getElementById('app-container').style.display = 'block';
-            startApp();
-          } else {
-            localStorage.removeItem(STORE_KEY);
-            msg.innerText = 'パスワードが違います';
-            msg.style.color = 'red';
-          }
-        })
-        .withFailureHandler(e => msg.innerText = 'エラー: ' + e)
-        .verifyAppPassword(pass);
+      try {
+        const isValid = await callGas('verifyAppPassword', pass);
+        if (isValid) {
+          msg.innerText = '';
+          localStorage.setItem(STORE_KEY, pass);
+          document.getElementById('login-ui').style.display = 'none';
+          document.getElementById('app-container').style.display = 'block';
+          startApp();
+        } else {
+          localStorage.removeItem(STORE_KEY);
+          msg.innerText = 'パスワードが違います';
+          msg.style.color = 'red';
+        }
+      } catch (e) {
+        msg.innerText = 'エラー: ' + e;
+      }
     }
 
     function doLogout() {
@@ -338,21 +339,21 @@
     }
 
     // ----- 支払い更新処理 -----
-    function doUpdatePayment(id) {
+async function doUpdatePayment(id) {
       if (!confirm('「支払済」として記録しますか？\n（スプレッドシートに「済」と入力されます）')) return;
 
-      google.script.run
-        .withSuccessHandler(() => {
-          alert('✅ 支払情報を更新しました');
-          
-          const paymentEl = document.getElementById('payment-area');
-          if (paymentEl && paymentEl.style.display !== 'none') {
-             paymentEl.innerHTML = `<div class="payment-ok">💰 支払確認済 (今更新しました)</div>`;
-          }
-          loadList();
-        })
-        .withFailureHandler(e => alert('エラー: ' + e))
-        .updatePaymentStatus(id);
+      try {
+        await callGas('updatePaymentStatus', id);
+        alert('✅ 支払情報を更新しました');
+        
+        const paymentEl = document.getElementById('payment-area');
+        if (paymentEl && paymentEl.style.display !== 'none') {
+           paymentEl.innerHTML = `<div class="payment-ok">💰 支払確認済 (今更新しました)</div>`;
+        }
+        loadList();
+      } catch (e) {
+        alert('エラー: ' + e);
+      }
     }
 
     // ----- QRスキャン -----
@@ -444,9 +445,8 @@
         filterList();
         
         // 裏でスプレッドシートを更新（結果を待たない）
-        google.script.run
-          .withFailureHandler(e => console.error('バックグラウンド書き込みエラー:', e))
-          .markAsCheckedInBack(id, currentModeKey);
+        callGas('markAsCheckedInBack', [id, currentModeKey])
+          .catch(e => console.error('バックグラウンド書き込みエラー:', e));
       }
     }
 
@@ -530,23 +530,22 @@
     }
 
     // ----- リスト処理 -----
-    function loadList() {
+    async function loadList() {
       const btn = document.querySelector('.btn-reload');
       const originalText = btn.innerText;
       btn.innerText = '更新中...';
       
-      google.script.run
-        .withSuccessHandler(function(list){
-          participantList = list;
-          updateDashboard(); 
-          filterList();
-          btn.innerText = originalText;
-        })
-        .withFailureHandler(e => {
-          document.getElementById('list-container').innerText = 'エラー: ' + e;
-          btn.innerText = originalText;
-        })
-        .getParticipantList();
+      try {
+        const list = await callGas('getParticipantList');
+        participantList = list;
+        updateDashboard(); 
+        filterList();
+      } catch (e) {
+        document.getElementById('list-container').innerText = 'エラー: ' + e;
+      } finally {
+        // 成功しても失敗してもボタンの文字を元に戻す
+        btn.innerText = originalText;
+      }
     }
 
     // ----- フィルター機能実装 -----
@@ -638,6 +637,24 @@
       }
 
       container.innerHTML = html;
+    }
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbw1oL3y-7EZeqULnSUsASb6MB4qa48p6-asXF5rwtfXzK7lbzz2POjR5F1ByxXumdRD2g/exec";
+
+    async function callGas(action, data = null) {
+      const url = new URL(GAS_URL);
+      url.searchParams.append("action", action);
+      if (data !== null) {
+        url.searchParams.append("data", JSON.stringify(data));
+      }
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        return await response.json();
+      } catch (e) {
+        console.error("GAS Call Error:", e);
+        throw e;
+      }
     }
   </script>
 </body>
