@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>受付スキャナー</title>
+  <style>
+    /* ベーススタイル */
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; padding: 10px; text-align: center; padding-bottom: 80px; }
+    .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    
+    #login-ui { display: block; padding: 30px 10px; }
+    .login-input { padding: 12px; font-size: 16px; width: 80%; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 15px; }
+    .btn-login { padding: 12px 30px; background: #333; color: white; border: none; border-radius: 50px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    
+    #app-container { display: none; }
+    #scan-ui { display: block; }
+    #result-ui { display: none; animation: fadeIn 0.3s; padding-top: 10px; }
+    
+    .mode-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    .mode-label { flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; font-weight: bold; background: #fafafa; transition: all 0.2s; color: #666; }
+    .mode-label input { display: none; }
+    .mode-label.active { border-color: #0d6efd; background: #e7f1ff; color: #0d6efd; }
+
+    .dashboard-card { background: #333; color: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+    .db-label { font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
+    .db-value { font-size: 2.2em; font-weight: bold; line-height: 1; }
+    .db-total { font-size: 1em; opacity: 0.8; margin-left: 5px; }
+    
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 10px; background: #000; min-height: 250px;}
+    
+    .status-box { padding: 15px; border-radius: 8px; font-weight: bold; font-size: 1.2em; margin-bottom: 10px; white-space: pre-wrap; }
+    .status-success { background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+    .status-warn { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+    .status-error { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+    
+    .highlight-info { margin: 20px 0; padding: 20px 10px; background: #f0f8ff; border: 4px solid #b3d7ff; border-radius: 12px; color: #004085; }
+    .big-group { display: block; font-size: 2.5em; font-weight: 900; color: #0d6efd; line-height: 1.2; margin-bottom: 5px; word-break: break-all; }
+    .big-no { display: block; font-size: 1.8em; font-weight: bold; color: #555; }
+    
+    .payment-alert { background: #ffebeb; border: 3px solid #ffcccc; color: #d00; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; font-size: 1.2em; animation: pulse 2s infinite; }
+    .payment-ok { background: #e8f5e9; color: #2e7d32; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; display: inline-block; margin-top: 5px; border: 1px solid #c8e6c9; }
+    
+    .btn-next { display: inline-block; margin-top: 20px; padding: 15px 30px; background: #0d6efd; color: white; border: none; border-radius: 50px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3); }
+    .btn-next:active { transform: scale(0.98); }
+    
+    .list-section { margin-top: 30px; border-top: 2px dashed #ddd; padding-top: 20px; text-align: left; }
+    .search-box { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; }
+    
+    .btn-reload { display: block; width: 100%; padding: 10px; margin-bottom: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; color: #0d6efd; font-weight: bold; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    .btn-reload:active { background: #e2e6ea; }
+    
+    #list-container { max-height: 400px; overflow-y: auto; }
+    .user-row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; gap: 10px; }
+    .user-row:last-child { border-bottom: none; }
+    .user-info { flex: 1; }
+    .user-name { font-weight: bold; display: block; }
+    .user-meta { font-size: 0.8em; color: #666; }
+    .btn-checkin-manual { padding: 6px 12px; background: #198754; color: #fff; border: none; border-radius: 4px; font-size: 0.9em; cursor: pointer; }
+    
+    .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; margin-right: 4px; }
+    .badge-grp { background: #e7f1ff; color: #0d6efd; font-weight: bold; }
+    .badge-unpaid { background: #dc3545; color: white; }
+
+    /* 支払いアクションボタン用CSS */
+    .btn-pay-action {
+      display: inline-block;
+      margin-top: 5px;
+      padding: 8px 16px;
+      background: #6610f2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .btn-pay-action:active { transform: scale(0.98); }
+
+    /* --- 新規追加: フィルターエリア用CSS --- */
+    .filter-area {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 0.9em;
+    }
+    .filter-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 5px;
+      flex-wrap: wrap;
+    }
+    .filter-label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .logic-toggle {
+      background: #e9ecef;
+      border-radius: 20px;
+      padding: 3px;
+      display: inline-flex;
+    }
+    .logic-opt {
+      padding: 4px 12px;
+      border-radius: 15px;
+      cursor: pointer;
+      font-weight: bold;
+      color: #666;
+    }
+    .logic-opt.selected {
+      background: #fff;
+      color: #0d6efd;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    input[type="radio"].logic-radio { display: none; }
+    /* ------------------------------------------- */
+
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+
+  <div class="container">
+    <div id="login-ui">
+      <h2>運営ログイン</h2>
+      <p style="font-size:0.9em; color:#666; margin-bottom:20px;">パスワードを入力してください</p>
+      <input type="password" id="pass-input" class="login-input" placeholder="Password">
+      <br>
+      <button class="btn-login" onclick="doLogin(false)">ログイン</button>
+      <div id="login-msg" style="color:#666; margin-top:10px; min-height:20px;"></div>
+    </div>
+
+    <div id="app-container">
+      <div id="scan-ui">
+        <div class="mode-group" id="mode-group-container"></div>
+
+        <div class="dashboard-card">
+          <div class="db-label" id="db-title">受付状況</div>
+          <div>
+            <span class="db-value" id="db-done">-</span>
+            <span class="db-total">/ <span id="db-total">-</span> 名</span>
+          </div>
+        </div>
+
+        <div id="reader"></div>
+        <div id="cam-status" style="font-size:0.9em; color:#666; margin-bottom:10px;">カメラ起動中...</div>
+        
+        <div class="list-section">
+          <h3>🔍 手動チェックイン / リスト</h3>
+          <button class="btn-reload" onclick="loadList()">🔄 リストを更新する</button>
+          <input type="text" id="search-input" class="search-box" placeholder="名前 または 受付No で検索..." oninput="filterList()">
+          
+          <div class="filter-area">
+            <div class="filter-row">
+              <label class="filter-label">
+                <input type="checkbox" id="chk-not-checkin" onchange="filterList()"> ⏳ 未受付
+              </label>
+              <label class="filter-label">
+                <input type="checkbox" id="chk-unpaid" onchange="filterList()"> 💴 未払い
+              </label>
+            </div>
+            <div class="filter-row">
+              <span style="font-size:0.85em; color:#666; margin-right:5px;">条件:</span>
+              <div class="logic-toggle">
+                <label class="logic-opt selected" id="lbl-and">
+                  <input type="radio" name="logic" value="and" checked class="logic-radio" onchange="toggleLogic('and')"> AND
+                </label>
+                <label class="logic-opt" id="lbl-or">
+                  <input type="radio" name="logic" value="or" class="logic-radio" onchange="toggleLogic('or')"> OR
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="list-container">読み込み中...</div>
+        </div>
+        
+        <div style="margin-top:30px; text-align:right;">
+          <button onclick="doLogout()" style="background:none; border:none; color:#999; text-decoration:underline; cursor:pointer;">ログアウト</button>
+        </div>
+      </div>
+
+      <div id="result-ui">
+        <div id="status-msg" class="status-box"></div>
+        <div id="payment-area"></div>
+        <div id="info-detail" style="text-align:left; background:#f9f9f9; padding:15px; border-radius:6px; margin:15px 0; font-size:1.1em;"></div>
+        <button class="btn-next" onclick="resetScanner()">次の人をスキャン</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let APP_CONFIG = {};
+    try {
+      APP_CONFIG = <?!= config ?>;
+    } catch(e) {
+      console.error('Config load failed', e);
+      APP_CONFIG = { modes: { default: { label: 'Event' } } };
+    }
+  </script>
+
+  <script>
+    let html5QrcodeScanner = null;
+    let currentModeKey = '';
+    let isScanning = true;
+    let participantList = []; 
+    const STORE_KEY = 'scan_app_pass'; 
+
+    window.onload = function() {
+      initModeButtons();
+      const savedPass = localStorage.getItem(STORE_KEY);
+      if (savedPass) {
+        document.getElementById('pass-input').value = savedPass;
+        doLogin(true);
+      }
+    };
+
+    // ----- 初期化: モードボタンの生成 -----
+    function initModeButtons() {
+      const container = document.getElementById('mode-group-container');
+      container.innerHTML = '';
+      
+      const modeKeys = Object.keys(APP_CONFIG.modes);
+      if (modeKeys.length === 0) return;
+
+      currentModeKey = modeKeys[0];
+
+      if (modeKeys.length === 1) {
+        container.style.display = 'none';
+        updateDashboard();
+        return;
+      }
+
+      modeKeys.forEach(key => {
+        const mode = APP_CONFIG.modes[key];
+        const label = document.createElement('label');
+        label.className = 'mode-label';
+        label.id = 'lbl-' + key;
+        label.onclick = () => setMode(key);
+        label.innerText = mode.label;
+        container.appendChild(label);
+      });
+
+      updateModeUi();
+    }
+
+    function setMode(key) {
+      currentModeKey = key;
+      updateModeUi();
+      filterList();
+    }
+
+    function updateModeUi() {
+      const modeKeys = Object.keys(APP_CONFIG.modes);
+      modeKeys.forEach(key => {
+        const el = document.getElementById('lbl-' + key);
+        if (el) el.classList.remove('active');
+      });
+
+      const activeEl = document.getElementById('lbl-' + currentModeKey);
+      if (activeEl) activeEl.classList.add('active');
+
+      updateDashboard();
+    }
+
+    function updateDashboard() {
+      const titleEl = document.getElementById('db-title');
+      const doneEl = document.getElementById('db-done');
+      const totalEl = document.getElementById('db-total');
+
+      const modeLabel = APP_CONFIG.modes[currentModeKey].label;
+      titleEl.innerText = `${modeLabel} 受付状況`;
+
+      if (!participantList.length) {
+        doneEl.innerText = '-';
+        totalEl.innerText = '-';
+        return;
+      }
+
+      let countDone = 0;
+      let countTotal = 0;
+      
+      participantList.forEach(u => {
+        const info = u[currentModeKey];
+        if (info && info.eligible) {
+          countTotal++;
+          if (info.checkedIn) countDone++;
+        }
+      });
+      doneEl.innerText = countDone;
+      totalEl.innerText = countTotal;
+    }
+
+    // ----- フィルターロジック制御 -----
+    function toggleLogic(val) {
+      document.getElementById('lbl-and').className = 'logic-opt' + (val === 'and' ? ' selected' : '');
+      document.getElementById('lbl-or').className = 'logic-opt' + (val === 'or' ? ' selected' : '');
+      filterList();
+    }
+
+    // ----- ログイン・ログアウト -----
+    function doLogin(isAuto) {
+      const pass = document.getElementById('pass-input').value;
+      const msg = document.getElementById('login-msg');
+      msg.innerText = isAuto ? '自動ログイン中...' : '認証中...';
+
+      google.script.run
+        .withSuccessHandler(function(isValid) {
+          if (isValid) {
+            msg.innerText = '';
+            localStorage.setItem(STORE_KEY, pass);
+            document.getElementById('login-ui').style.display = 'none';
+            document.getElementById('app-container').style.display = 'block';
+            startApp();
+          } else {
+            localStorage.removeItem(STORE_KEY);
+            msg.innerText = 'パスワードが違います';
+            msg.style.color = 'red';
+          }
+        })
+        .withFailureHandler(e => msg.innerText = 'エラー: ' + e)
+        .verifyAppPassword(pass);
+    }
+
+    function doLogout() {
+      if(confirm('ログアウトしますか？')) {
+        localStorage.removeItem(STORE_KEY);
+        location.reload();
+      }
+    }
+
+    // ----- 支払い更新処理 -----
+    function doUpdatePayment(id) {
+      if (!confirm('「支払済」として記録しますか？\n（スプレッドシートに「済」と入力されます）')) return;
+
+      google.script.run
+        .withSuccessHandler(() => {
+          alert('✅ 支払情報を更新しました');
+          
+          const paymentEl = document.getElementById('payment-area');
+          if (paymentEl && paymentEl.style.display !== 'none') {
+             paymentEl.innerHTML = `<div class="payment-ok">💰 支払確認済 (今更新しました)</div>`;
+          }
+          loadList();
+        })
+        .withFailureHandler(e => alert('エラー: ' + e))
+        .updatePaymentStatus(id);
+    }
+
+    // ----- QRスキャン -----
+    function startApp() {
+      html5QrcodeScanner = new Html5Qrcode("reader");
+      
+      // スキャン速度を上げるための最適化設定
+      const config = { 
+        fps: 30, // 10から30に変更（反応速度アップ）
+        qrbox: { width: 250, height: 250 }, 
+        aspectRatio: 1.0,
+        // QRコードのみを探すように制限（計算処理が爆速になります）
+        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ] 
+      };
+      
+      // エラーの原因だった cameraConfig は削除し、元のシンプルな指定に戻します
+      html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
+        .then(() => document.getElementById('cam-status').innerText = 'カメラをQRに向けてください')
+        .catch(err => {
+          document.getElementById('cam-status').innerText = 'カメラ起動エラー: ' + err;
+          document.getElementById('cam-status').style.color = 'red';
+        });
+
+      loadList();
+    }
+
+    function onScanSuccess(decodedText) {
+      if (!isScanning) return;
+      handleCheckin(decodedText);
+    }
+
+    function handleCheckin(rawString) {
+      isScanning = false;
+      
+      let id = rawString;
+      if (rawString.includes('id=')) {
+        const match = rawString.match(/id=([^&]+)/);
+        if (match) id = decodeURIComponent(match[1]);
+      }
+      id = id.trim();
+
+      // ★GASに通信せず、手元のメモリ(participantList)から一瞬で検索
+      const user = participantList.find(u => u.checkinId === id);
+
+      if (!user) {
+        showResult({ success: false, message: '❌ IDが見つからない、またはキャンセル済です' });
+        return;
+      }
+
+      const modeData = user[currentModeKey];
+      if (!modeData) {
+        showResult({ success: false, message: '❌ 不明なモードです' });
+        return;
+      }
+
+      if (!modeData.eligible) {
+        const modeLabel = APP_CONFIG.modes[currentModeKey].label;
+        showResult({ success: false, message: `⚠️ ${user.name} 様は【${modeLabel} 不参加】枠です` });
+        return;
+      }
+
+      // ローカルでの受付状態を確認
+      const already = modeData.checkedIn;
+      
+      // 画面に渡すデータを作成
+      const res = {
+        success: true,
+        already: already,
+        checkinId: id,
+        data: {
+          name: user.name,
+          ticket: user.ticket,
+          attend: user.attend,
+          receptionNo: user.receptionNo,
+          total: user.total,
+          group: modeData.group,
+          paymentStatus: user.isPaid ? 'paid' : 'unpaid'
+        }
+      };
+
+      // 0.01秒で画面を更新
+      showResult(res);
+
+      // ★未受付だった場合、画面表示と並行して「裏側」でGASに書き込み指示を出す
+      if (!already) {
+        // 先に手元のリストを「受付済」に変更しておく（再スキャン防止とリスト即時反映）
+        user[currentModeKey].checkedIn = true;
+        updateDashboard();
+        filterList();
+        
+        // 裏でスプレッドシートを更新（結果を待たない）
+        google.script.run
+          .withFailureHandler(e => console.error('バックグラウンド書き込みエラー:', e))
+          .markAsCheckedInBack(id, currentModeKey);
+      }
+    }
+
+    function showResult(res) {
+      document.getElementById('scan-ui').style.display = 'none';
+      document.getElementById('result-ui').style.display = 'block';
+
+      const statusEl = document.getElementById('status-msg');
+      const detailEl = document.getElementById('info-detail');
+      const paymentEl = document.getElementById('payment-area');
+
+      if (res.success) {
+        const groupDisp = res.data.group ? `<span class="big-group">${res.data.group}</span>` : '<span class="big-group" style="color:#666; font-size:1.5em;">フリー</span>';
+        
+        let statusHtml = '';
+        let boxClass = '';
+        if (res.already) {
+          boxClass = 'status-warn';
+          statusHtml = `⚠️ 受付済みです`;
+        } else {
+          boxClass = 'status-success';
+          statusHtml = `✅ 受付完了`;
+        }
+        statusEl.className = 'status-box ' + boxClass;
+
+        statusEl.innerHTML = `
+          <div class="highlight-info">
+            <div style="font-size:0.9em; color:#666; margin-bottom:5px;">GROUP</div>
+            ${groupDisp}
+            <span class="big-no">No.${res.data.receptionNo}</span>
+          </div>
+          <div>${statusHtml}</div>
+          <div style="font-size:1.6em; font-weight:bold; margin-top:10px;">${res.data.name} <span style="font-size:0.6em">様</span></div>
+        `;
+        
+        if (res.data.paymentStatus === 'unpaid') {
+          paymentEl.innerHTML = `
+            <div class="payment-alert">
+              ⚠️ 未払いです！<br>請求額: ${res.data.total}円
+              <br>
+              <button class="btn-pay-action" onclick="doUpdatePayment('${res.checkinId}')">
+                ¥ 現地で支払ったので済にする
+              </button>
+            </div>
+          `;
+        } else {
+          paymentEl.innerHTML = `<div class="payment-ok">💰 支払確認済</div>`;
+        }
+
+        detailEl.innerHTML = `
+          チケット: ${res.data.ticket}<br>
+          参加形態: ${res.data.attend}
+        `;
+      } else {
+        statusEl.className = 'status-box status-error';
+        statusEl.innerText = res.message;
+        detailEl.innerHTML = '';
+        paymentEl.innerHTML = '';
+      }
+      
+      if(html5QrcodeScanner) {
+        try { html5QrcodeScanner.pause(); } catch(e){}
+      }
+      
+      // 注意: ここにあった loadList() は削除しました（ローカル更新のみにするため）
+    }
+
+    function showError(e) {
+      alert('エラー: ' + e);
+      resetScanner();
+    }
+
+    function resetScanner() {
+      document.getElementById('result-ui').style.display = 'none';
+      document.getElementById('scan-ui').style.display = 'block';
+      document.getElementById('cam-status').innerText = 'カメラをQRに向けてください';
+      isScanning = true;
+      if(html5QrcodeScanner) {
+        try { html5QrcodeScanner.resume(); } catch(e) {}
+      }
+    }
+
+    // ----- リスト処理 -----
+    function loadList() {
+      const btn = document.querySelector('.btn-reload');
+      const originalText = btn.innerText;
+      btn.innerText = '更新中...';
+      
+      google.script.run
+        .withSuccessHandler(function(list){
+          participantList = list;
+          updateDashboard(); 
+          filterList();
+          btn.innerText = originalText;
+        })
+        .withFailureHandler(e => {
+          document.getElementById('list-container').innerText = 'エラー: ' + e;
+          btn.innerText = originalText;
+        })
+        .getParticipantList();
+    }
+
+    // ----- フィルター機能実装 -----
+    function filterList() {
+      const container = document.getElementById('list-container');
+      const query = document.getElementById('search-input').value.toLowerCase();
+      
+      // フィルター条件の取得
+      const filterNotCheckin = document.getElementById('chk-not-checkin').checked;
+      const filterUnpaid = document.getElementById('chk-unpaid').checked;
+      const logicMode = document.querySelector('input[name="logic"]:checked').value; // 'and' or 'or'
+
+      if (!participantList.length) {
+        container.innerHTML = '<div style="padding:10px; color:#666;">データを取得してください</div>';
+        return;
+      }
+
+      let html = '';
+      const filtered = participantList.filter(u => {
+        // 1. テキスト検索 (AND条件)
+        const target = (u.name + ' ' + u.receptionNo).toLowerCase();
+        const matchesText = target.includes(query);
+        if (!matchesText) return false;
+
+        // 2. 状態フィルター
+        if (!filterNotCheckin && !filterUnpaid) return true; // フィルターなし
+
+        const modeData = u[currentModeKey];
+        // 該当モード対象外の人は、未受付フィルターの対象外とする（表示しない）
+        if (!modeData || !modeData.eligible) return false;
+
+        const isNotCheckin = !modeData.checkedIn;
+        const isUnpaid = !u.isPaid;
+
+        if (logicMode === 'and') {
+          // AND: チェックされた条件すべてを満たす
+          if (filterNotCheckin && !isNotCheckin) return false;
+          if (filterUnpaid && !isUnpaid) return false;
+          return true;
+        } else {
+          // OR: チェックされた条件のいずれかを満たす
+          if (filterNotCheckin && isNotCheckin) return true;
+          if (filterUnpaid && isUnpaid) return true;
+          return false;
+        }
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding:10px;">該当者なし</div>';
+        return;
+      }
+
+      const limit = 50; // 表示制限
+      
+      filtered.slice(0, limit).forEach(u => {
+        const modeData = u[currentModeKey];
+        
+        let btnHtml = '';
+        if (!modeData || !modeData.eligible) {
+          btnHtml = '<span style="color:#ccc; font-size:0.8em;">対象外</span>';
+        } else if (modeData.checkedIn) {
+          btnHtml = '<span style="color:#198754; font-weight:bold;">済</span>';
+        } else {
+          btnHtml = `<button class="btn-checkin-manual" onclick="handleCheckin('${u.checkinId}')">チェックイン</button>`;
+        }
+        
+        const grpBadge = modeData && modeData.group ? `<span class="badge badge-grp">${modeData.group}</span>` : '';
+
+        // 未払いバッジ
+        let unpaidDisp = '';
+        if (!u.isPaid) {
+          unpaidDisp = `<span class="badge badge-unpaid">未払い</span>`;
+        }
+
+        html += `
+          <div class="user-row">
+            <div class="user-info">
+              <div class="user-meta">No.${u.receptionNo} ${grpBadge}</div>
+              <div style="margin-top:2px;">${unpaidDisp}</div>
+              <span class="user-name">${u.name}</span>
+            </div>
+            <div>${btnHtml}</div>
+          </div>
+        `;
+      });
+      
+      if (filtered.length > limit) {
+        html += `<div style="text-align:center; padding:5px; color:#999;">他 ${filtered.length - limit} 件...</div>`;
+      }
+
+      container.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
