@@ -187,25 +187,16 @@
     let currentModeKey = '';
     let isScanning = true;
     let participantList = []; 
-    const STORE_KEY = 'scan_app_pass'; 
 
     window.onload = async function() {
-      // 1. GASから設定を引っ張ってくる
       try {
-        APP_CONFIG = await callGas('getConfig');
-      } catch(e) {
+        APP_CONFIG = await callGas('getConfig');doLogin
+      } catch (e) {
         console.error('Config load failed', e);
       }
-
-      // 2. 画面の初期化
+    
       initModeButtons();
-      
-      // 3. ログインチェック
-      const savedPass = localStorage.getItem(STORE_KEY);
-      if (savedPass) {
-        document.getElementById('pass-input').value = savedPass;
-        doLogin(true);
-      }
+      startApp();
     };
 
     // ----- 初期化: モードボタンの生成 -----
@@ -291,37 +282,6 @@
       filterList();
     }
 
-    // ----- ログイン・ログアウト -----
-  async function doLogin(isAuto) {
-      const pass = document.getElementById('pass-input').value;
-      const msg = document.getElementById('login-msg');
-      msg.innerText = isAuto ? '自動ログイン中...' : '認証中...';
-
-      try {
-        const isValid = await callGas('verifyAppPassword', pass);
-        if (isValid) {
-          msg.innerText = '';
-          localStorage.setItem(STORE_KEY, pass);
-          document.getElementById('login-ui').style.display = 'none';
-          document.getElementById('app-container').style.display = 'block';
-          startApp();
-        } else {
-          localStorage.removeItem(STORE_KEY);
-          msg.innerText = 'パスワードが違います';
-          msg.style.color = 'red';
-        }
-      } catch (e) {
-        msg.innerText = 'エラー: ' + e;
-      }
-    }
-
-    function doLogout() {
-      if(confirm('ログアウトしますか？')) {
-        localStorage.removeItem(STORE_KEY);
-        location.reload();
-      }
-    }
-
     // ----- 支払い更新処理 -----
 async function doUpdatePayment(id) {
       if (!confirm('「支払済」として記録しますか？\n（スプレッドシートに「済」と入力されます）')) return;
@@ -342,25 +302,24 @@ async function doUpdatePayment(id) {
 
     // ----- QRスキャン -----
     function startApp() {
+      if (html5QrcodeScanner) return;
+    
       html5QrcodeScanner = new Html5Qrcode("reader");
-      
-      // スキャン速度を上げるための最適化設定
+    
       const config = { 
-        fps: 30, // 10から30に変更（反応速度アップ）
+        fps: 30,
         qrbox: { width: 250, height: 250 }, 
         aspectRatio: 1.0,
-        // QRコードのみを探すように制限（計算処理が爆速になります）
         formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ] 
       };
-      
-      // エラーの原因だった cameraConfig は削除し、元のシンプルな指定に戻します
+    
       html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
         .then(() => document.getElementById('cam-status').innerText = 'カメラをQRに向けてください')
         .catch(err => {
           document.getElementById('cam-status').innerText = 'カメラ起動エラー: ' + err;
           document.getElementById('cam-status').style.color = 'red';
         });
-
+    
       loadList();
     }
 
